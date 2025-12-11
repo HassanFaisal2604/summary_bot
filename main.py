@@ -110,7 +110,7 @@ def parse_day_argument(day_arg: str, timezone: str = "Asia/Karachi") -> Optional
 
 def find_final_update_for_date(
     messages: List[discord.Message], target_date: str
-) -> tuple[Optional[str], Optional[int]]:
+) -> Tuple[Optional[str], Optional[int]]:
     """Find Final Update message for a specific date."""
     for idx, msg in enumerate(messages):
         text = extract_message_text(msg)
@@ -198,7 +198,7 @@ def combine_final_update_messages(
     primary_ts = getattr(primary_msg, "created_at", None)
     run_date = _extract_run_date_from_text(primary_text)
     window_sec = 300  # 5 minutes; split parts share the same timestamp
-    parts: List[tuple[datetime.datetime, str]] = []
+    parts: List[Tuple[datetime.datetime, str]] = []
 
     def is_final_like_text(text: str) -> bool:
         tl = text.lower()
@@ -268,7 +268,7 @@ def split_schedule_and_final_update(text: str) -> Tuple[Optional[str], Optional[
 def extract_schedule_and_final_update(
     messages: List[discord.Message],
     target_date: Optional[str] = None,
-) -> tuple[Optional[str], Optional[str]]:
+) -> Tuple[Optional[str], Optional[str]]:
     """
     Extract schedule and final update from messages.
     Searches for them as separate messages first, then handles combined case.
@@ -414,7 +414,7 @@ class ChannelData:
 def parse_schedule_for_date(
     schedule_text: str,
     run_date: Optional[str] = None,
-) -> tuple[str, str, Dict[str, tuple[str, int]]]:
+) -> Tuple[str, str, Dict[str, Tuple[str, int]]]:
     """
     Parse schedule and match to specific run_date from Final Update.
 
@@ -422,7 +422,7 @@ def parse_schedule_for_date(
     """
     device_name = "Unknown"
     method = "Method 1"
-    accounts: Dict[str, tuple[str, int]] = {}
+    accounts: Dict[str, Tuple[str, int]] = {}
 
     lowered = schedule_text.lower()
 
@@ -546,7 +546,7 @@ def parse_schedule_for_date(
 
 def parse_final_update(
     final_update_text: str,
-) -> tuple[str, str, Dict[str, tuple[int, int, bool, bool]], Optional[str]]:
+) -> Tuple[str, str, Dict[str, Tuple[int, int, bool, bool]], Optional[str]]:
     """
     Parse Task Final Update text - keeps LAST occurrence of each account.
     
@@ -554,7 +554,7 @@ def parse_final_update(
     """
     device_name = "Unknown"
     run_date = ""
-    accounts: Dict[str, tuple[int, int, bool, bool]] = {}
+    accounts: Dict[str, Tuple[int, int, bool, bool]] = {}
     error_message: Optional[str] = None
 
     lowered = final_update_text.lower()
@@ -702,7 +702,7 @@ def build_channel_data(
 
     # Parse Final Update FIRST to get run_date
     run_date: Optional[str] = None
-    actual_accounts: Dict[str, tuple[int, int, bool, bool]] = {}
+    actual_accounts: Dict[str, Tuple[int, int, bool, bool]] = {}
     if final_update_text:
         fu_device, run_date, actual_accounts, error_message = parse_final_update(
             final_update_text
@@ -718,7 +718,7 @@ def build_channel_data(
             method_from_final = "Method 9"
 
     # Parse Schedule using run_date to match the correct day
-    scheduled_accounts: Dict[str, tuple[str, int]] = {}
+    scheduled_accounts: Dict[str, Tuple[str, int]] = {}
     if schedule_text:
         sched_device, method, scheduled_accounts = parse_schedule_for_date(
             schedule_text, run_date
