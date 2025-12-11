@@ -7,7 +7,11 @@ from config import Settings
 
 
 # Lazy import so the bot can run without google-genai installed.
-_genai_mod = importlib.util.find_spec("google.genai")
+try:
+    _genai_mod = importlib.util.find_spec("google.genai") if importlib.util.find_spec("google") else None
+except ModuleNotFoundError:
+    _genai_mod = None
+
 _client = None
 logger = logging.getLogger("summary_bot.ai")
 
@@ -18,7 +22,8 @@ def init_gemini(settings: Settings) -> None:
     if not settings.gemini_api_key:
         return
     if _genai_mod is None:
-        raise RuntimeError("google-genai is not installed; install it to use Gemini.")
+        logger.warning("GEMINI_API_KEY provided but google-genai is not installed; skipping Gemini init.")
+        return
     if _client is None:
         genai = importlib.import_module("google.genai")
         _client = genai.Client(api_key=settings.gemini_api_key)
