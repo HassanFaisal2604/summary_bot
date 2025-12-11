@@ -3,7 +3,7 @@ import datetime
 import logging
 import re
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import discord
 from discord.ext import commands, tasks
@@ -140,7 +140,7 @@ def extract_message_text(msg: discord.Message) -> str:
 def find_and_combine_messages(
     messages: List[discord.Message],
     start_keyword: str,
-) -> str | None:
+) -> Optional[str]:
     """
     Find the MOST RECENT single message block for the keyword.
 
@@ -244,7 +244,7 @@ def combine_final_update_messages(
     return "\n".join(p[1] for p in parts_sorted)
 
 
-def split_schedule_and_final_update(text: str) -> tuple[str | None, str | None]:
+def split_schedule_and_final_update(text: str) -> Tuple[Optional[str], Optional[str]]:
     """Split combined text into schedule and final update portions when both exist."""
 
     text_lower = text.lower()

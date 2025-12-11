@@ -1,7 +1,7 @@
 import asyncio
 import importlib
 import logging
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 from config import Settings
 
@@ -63,7 +63,7 @@ def _build_prompt(compact_data: str) -> str:
 async def summarize_with_gemini(
     settings: Settings,
     compact_data: str,
-) -> str | None:
+) -> Optional[str]:
     """Call Gemini with compact pre-parsed data."""
 
     if not settings.gemini_api_key:

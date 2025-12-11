@@ -1,6 +1,6 @@
 import os
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional
 
 from dotenv import load_dotenv
 
@@ -23,7 +23,7 @@ class Settings:
     gemini_model: str = "gemini-2.5-pro"
 
 
-def _parse_keywords(raw: str | None) -> List[str]:
+def _parse_keywords(raw: Optional[str]) -> List[str]:
     if not raw:
         return []
     return [k.strip().lower() for k in raw.split(",") if k.strip()]
