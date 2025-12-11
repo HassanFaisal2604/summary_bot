@@ -922,9 +922,9 @@ def format_output_directly(channels: List[ChannelData]) -> str:
 async def on_ready():
     logger.info("Summary bot logged in as %s (ID: %s)", bot.user, bot.user.id)
     logger.info(
-        "Using server_id=%s owner_user_id=%s timezone=%s keywords=%s",
+        "Using server_id=%s owner_user_ids=%s timezone=%s keywords=%s",
         settings.server_id,
-        settings.owner_user_id,
+        settings.owner_user_ids,
         settings.timezone,
         settings.keywords,
     )
@@ -1046,13 +1046,18 @@ async def run_daily_summary(target_date: Optional[str] = None):
     
     final_report = f"📊 **Daily Summary - {today_str}**\n\n{output_text.strip()}"
 
-    try:
-        owner = await bot.fetch_user(settings.owner_user_id)
-        chunks = [final_report[i:i + 1900] for i in range(0, len(final_report), 1900)]
-        for chunk in chunks:
-            await owner.send(chunk)
-    except Exception as exc:
-        logger.exception("Failed to DM owner %s with summary: %s", settings.owner_user_id, exc)
+    if not settings.owner_user_ids:
+        logger.info("No owners configured; skipping DM delivery of summary.")
+        return
+
+    chunks = [final_report[i:i + 1900] for i in range(0, len(final_report), 1900)]
+    for owner_id in settings.owner_user_ids:
+        try:
+            owner = await bot.fetch_user(owner_id)
+            for chunk in chunks:
+                await owner.send(chunk)
+        except Exception as exc:
+            logger.exception("Failed to DM owner %s with summary: %s", owner_id, exc)
 
 
 @tasks.loop(hours=24)
@@ -1088,7 +1093,10 @@ async def ping(ctx: commands.Context):
 
 
 def _is_owner(user_id: int) -> bool:
-    return user_id == settings.owner_user_id
+    # No owners configured => guard disabled (anyone can run commands).
+    if not settings.owner_user_ids:
+        return True
+    return user_id in settings.owner_user_ids
 
 
 @bot.command(name="summary")
