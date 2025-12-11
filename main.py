@@ -929,9 +929,7 @@ async def on_ready():
         settings.keywords,
     )
     init_gemini(settings)
-    if not daily_summary.is_running():
-        logger.info("Starting daily_summary loop")
-        daily_summary.start()
+    # Auto daily summary disabled; use !summary command to trigger manually.
 
 
 async def run_daily_summary(target_date: Optional[str] = None):
