@@ -1,20 +1,26 @@
 import asyncio
+import importlib
 import logging
 from typing import List, Dict, Any
-
-from google import genai
 
 from config import Settings
 
 
-_client: genai.Client | None = None
+# Lazy import so the bot can run without google-genai installed.
+_genai_mod = importlib.util.find_spec("google.genai")
+_client = None
 logger = logging.getLogger("summary_bot.ai")
 
 
 def init_gemini(settings: Settings) -> None:
     """Configure the Gemini client once at startup using google-genai."""
     global _client
-    if settings.gemini_api_key:
+    if not settings.gemini_api_key:
+        return
+    if _genai_mod is None:
+        raise RuntimeError("google-genai is not installed; install it to use Gemini.")
+    if _client is None:
+        genai = importlib.import_module("google.genai")
         _client = genai.Client(api_key=settings.gemini_api_key)
 
 
@@ -62,6 +68,8 @@ async def summarize_with_gemini(
 
     if not settings.gemini_api_key:
         raise RuntimeError("GEMINI_API_KEY not configured")
+    if _genai_mod is None:
+        raise RuntimeError("google-genai is not installed; install it to use Gemini.")
 
     if not compact_data:
         return ""
@@ -74,6 +82,7 @@ async def summarize_with_gemini(
     def _call_gemini() -> str:
         global _client
         if _client is None:
+            genai = importlib.import_module("google.genai")
             _client = genai.Client(api_key=settings.gemini_api_key)
 
         response = _client.models.generate_content(
