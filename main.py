@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
 import discord
+from discord.abc import Messageable
 from discord.ext import commands, tasks
 import pytz
 
@@ -932,7 +933,10 @@ async def on_ready():
     # Auto daily summary disabled; use !summary command to trigger manually.
 
 
-async def run_daily_summary(target_date: Optional[str] = None):
+async def run_daily_summary(
+    target_date: Optional[str] = None,
+    destination: Optional[Messageable] = None,
+):
     """Run summary for a specific date or most recent."""
     guild: Optional[discord.Guild] = bot.get_guild(settings.server_id)
     if guild is None:
@@ -1046,11 +1050,22 @@ async def run_daily_summary(target_date: Optional[str] = None):
     
     final_report = f"📊 **Daily Summary - {today_str}**\n\n{output_text.strip()}"
 
+    chunks = [final_report[i:i + 1900] for i in range(0, len(final_report), 1900)]
+
+    # Preferred: send to the provided destination (e.g., the channel where the command ran)
+    if destination:
+        try:
+            for chunk in chunks:
+                await destination.send(chunk)
+            return
+        except Exception as exc:
+            logger.exception("Failed to send summary to destination: %s", exc)
+            # Fall through to owner DM attempt as a fallback
+
     if not settings.owner_user_ids:
         logger.info("No owners configured; skipping DM delivery of summary.")
         return
 
-    chunks = [final_report[i:i + 1900] for i in range(0, len(final_report), 1900)]
     for owner_id in settings.owner_user_ids:
         try:
             owner = await bot.fetch_user(owner_id)
@@ -1142,7 +1157,7 @@ async def summary_command(ctx: commands.Context, *, day_arg: str = None):
         await ctx.send("📊 Getting most recent summary...")
     
     logger.info("!summary triggered by %s for date=%s", ctx.author, target_date)
-    await run_daily_summary(target_date=target_date)
+    await run_daily_summary(target_date=target_date, destination=ctx.channel)
 
 
 def main():
