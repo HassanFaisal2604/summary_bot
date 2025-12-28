@@ -202,14 +202,42 @@ def combine_final_update_messages(
     parts: List[Tuple[datetime.datetime, str]] = []
 
     def is_final_like_text(text: str) -> bool:
+        """
+        Check if text is a FINAL update (not intermediate Task Update).
+        
+        CRITICAL: Must distinguish between:
+        - "Task Final Update" (INCLUDE - this is what we want)
+        - "Task Update" without "Final" (EXCLUDE - intermediate update)
+        - Continuation sections with account data (INCLUDE - part of Final Update)
+        """
         tl = text.lower()
-        return (
-            "task final update" in tl
-            or ("automation type" in tl and ("account username" in tl or "account:" in tl))
-            or "request pending" in tl
-            or "popup detected" in tl
-            or ("automation type" in tl and "method 9" in tl)
-        )
+        
+        # EXCLUDE intermediate "Task Update" messages (not Final)
+        # These have "task update" but NOT "task final update"
+        if "task update" in tl and "task final update" not in tl:
+            return False
+        
+        # Include actual Final Updates
+        if "task final update" in tl:
+            return True
+        
+        # Include popup/error messages that are final-like
+        if "request pending" in tl or "popup detected" in tl:
+            return True
+        
+        # Include Method 9 completions with account info
+        if "automation type" in tl and "method 9" in tl and "account username" in tl:
+            return True
+        
+        # Include continuation sections that have account data
+        # These are split parts of Final Updates that don't have the header
+        # They have "automation type" AND "account username" AND final-update fields
+        # like "no. of follow made" (not "this run follows made" which is intermediate)
+        if ("automation type" in tl and "account username" in tl and 
+            ("no. of follow made" in tl or "no. of follow requests made" in tl or "no. of unfollowed" in tl)):
+            return True
+        
+        return False
 
     def consider(idx: int):
         msg = messages[idx]
@@ -560,6 +588,13 @@ def parse_final_update(
 
     lowered = final_update_text.lower()
 
+    # VALIDATION: Warn if we're parsing something that looks like an intermediate update
+    if "task update" in lowered and "task final update" not in lowered:
+        logger.warning(
+            "VALIDATION WARNING: Parsing text that looks like intermediate 'Task Update' "
+            "(not Final). This may cause incorrect counts."
+        )
+
     # Hard error cases – return early with error only
     if "force stopped" in lowered:
         return device_name, run_date, accounts, "Automation force stopped"
@@ -621,23 +656,27 @@ def parse_final_update(
             # Unfollow runs should not add follow request counts; force zero
             requests = 0
         else:
+            # CRITICAL: Only match "no. of follow requests MADE: X" (with "Made")
+            # Do NOT match "no. of follow requests: username + N others" (that's a list of users, not a count!)
             requests_match = re.search(
                 r"no\.\s*of\s*follow\s*requests\s*made:\s*(\d+)", section, re.IGNORECASE
             )
             if requests_match:
                 requests = int(requests_match.group(1).replace(",", ""))
             else:
-                # Handle "no. of follow requests: <text + N others>" by capturing the trailing number
-                requests_fallback = re.search(
-                    r"no\.\s*of\s*follow\s*requests[^0-9]*(\d+)",
+                # VALIDATION: Check if there's a "N others" pattern that we're correctly ignoring
+                others_pattern = re.search(
+                    r"no\.\s*of\s*follow\s*requests:.*\+\s*(\d+)\s*others",
                     section,
                     re.IGNORECASE,
                 )
-                requests = (
-                    int(requests_fallback.group(1).replace(",", ""))
-                    if requests_fallback
-                    else 0
-                )
+                if others_pattern:
+                    logger.debug(
+                        "Correctly ignoring 'N others' pattern for %s (N=%s is a user list, not count)",
+                        username,
+                        others_pattern.group(1),
+                    )
+                requests = 0
 
         blocked_match = re.search(
             r"account actions blocked:\s*(true|false)", section, re.IGNORECASE
