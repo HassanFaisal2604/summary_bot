@@ -37,28 +37,28 @@ def _now_utc() -> datetime.datetime:
 def parse_day_argument(day_arg: str, timezone: str = "Asia/Karachi") -> Optional[str]:
     """
     Parse day argument into a date string (YYYY-MM-DD).
-    
+
     Accepts: "monday", "tue", "today", "yesterday", "dec 02", "2025-12-02", "12/02"
     """
     tz = pytz.timezone(timezone)
     now = datetime.datetime.now(tz)
     today = now.date()
-    
+
     day_arg_lower = day_arg.lower().strip()
-    
+
     # Handle relative days
     if day_arg_lower == "today":
         return today.strftime("%Y-%m-%d")
     if day_arg_lower == "yesterday":
         return (today - datetime.timedelta(days=1)).strftime("%Y-%m-%d")
-    
+
     # Handle day names
     day_names = {
         "monday": 0, "mon": 0, "tuesday": 1, "tue": 1, "tues": 1,
         "wednesday": 2, "wed": 2, "thursday": 3, "thu": 3, "thur": 3, "thurs": 3,
         "friday": 4, "fri": 4, "saturday": 5, "sat": 5, "sunday": 6, "sun": 6,
     }
-    
+
     if day_arg_lower in day_names:
         target_weekday = day_names[day_arg_lower]
         current_weekday = today.weekday()
@@ -67,7 +67,7 @@ def parse_day_argument(day_arg: str, timezone: str = "Asia/Karachi") -> Optional
             days_ago = 7  # If today is the target day, get last week's
         target_date = today - datetime.timedelta(days=days_ago)
         return target_date.strftime("%Y-%m-%d")
-    
+
     # Handle "dec 02", "december 2"
     month_names = {
         "jan": 1, "january": 1, "feb": 2, "february": 2, "mar": 3, "march": 3,
@@ -75,7 +75,7 @@ def parse_day_argument(day_arg: str, timezone: str = "Asia/Karachi") -> Optional
         "aug": 8, "august": 8, "sep": 9, "sept": 9, "september": 9,
         "oct": 10, "october": 10, "nov": 11, "november": 11, "dec": 12, "december": 12,
     }
-    
+
     month_day_match = re.match(r"(\w+)\s+(\d{1,2})", day_arg_lower)
     if month_day_match:
         month_str, day_str = month_day_match.groups()
@@ -89,11 +89,11 @@ def parse_day_argument(day_arg: str, timezone: str = "Asia/Karachi") -> Optional
                 return target_date.strftime("%Y-%m-%d")
             except ValueError:
                 return None
-    
+
     # Handle "2025-12-02"
     if re.match(r"\d{4}-\d{1,2}-\d{1,2}", day_arg):
         return day_arg
-    
+
     # Handle "12/02" or "12-02"
     short_match = re.match(r"(\d{1,2})[/-](\d{1,2})", day_arg)
     if short_match:
@@ -105,7 +105,7 @@ def parse_day_argument(day_arg: str, timezone: str = "Asia/Karachi") -> Optional
             return target_date.strftime("%Y-%m-%d")
         except ValueError:
             return None
-    
+
     return None
 
 
@@ -113,13 +113,35 @@ def find_final_update_for_date(
     messages: List[discord.Message], target_date: str
 ) -> Tuple[Optional[str], Optional[int]]:
     """Find Final Update message for a specific date."""
+    # Extract month and day from target_date to allow year flexibility
+    try:
+        target_dt = datetime.datetime.strptime(target_date, "%Y-%m-%d")
+        target_month = target_dt.month
+        target_day = target_dt.day
+    except ValueError:
+        # If parsing fails, fall back to exact match
+        target_month = None
+        target_day = None
+    
     for idx, msg in enumerate(messages):
         text = extract_message_text(msg)
         if "task final update" not in text.lower():
             continue
         run_date = _extract_run_date_from_text(text)
-        if run_date and run_date == target_date:
-            return text, idx
+        if run_date:
+            # Exact date match (preferred)
+            if run_date == target_date:
+                return text, idx
+            # Flexible match: same month and day, any year
+            if target_month and target_day:
+                try:
+                    run_dt = datetime.datetime.strptime(run_date, "%Y-%m-%d")
+                    if run_dt.month == target_month and run_dt.day == target_day:
+                        logger.debug("Found date match (flexible): %s matches %s (month/day)", run_date, target_date)
+                        return text, idx
+                except ValueError:
+                    pass
+    
     return None, None
 
 
@@ -204,39 +226,39 @@ def combine_final_update_messages(
     def is_final_like_text(text: str) -> bool:
         """
         Check if text is a FINAL update (not intermediate Task Update).
-        
+
         CRITICAL: Must distinguish between:
         - "Task Final Update" (INCLUDE - this is what we want)
         - "Task Update" without "Final" (EXCLUDE - intermediate update)
         - Continuation sections with account data (INCLUDE - part of Final Update)
         """
         tl = text.lower()
-        
+
         # EXCLUDE intermediate "Task Update" messages (not Final)
         # These have "task update" but NOT "task final update"
         if "task update" in tl and "task final update" not in tl:
             return False
-        
+
         # Include actual Final Updates
         if "task final update" in tl:
             return True
-        
+
         # Include popup/error messages that are final-like
         if "request pending" in tl or "popup detected" in tl:
             return True
-        
+
         # Include Method 9 completions with account info
         if "automation type" in tl and "method 9" in tl and "account username" in tl:
             return True
-        
+
         # Include continuation sections that have account data
         # These are split parts of Final Updates that don't have the header
         # They have "automation type" AND "account username" AND final-update fields
         # like "no. of follow made" (not "this run follows made" which is intermediate)
-        if ("automation type" in tl and "account username" in tl and 
+        if ("automation type" in tl and "account username" in tl and
             ("no. of follow made" in tl or "no. of follow requests made" in tl or "no. of unfollowed" in tl)):
             return True
-        
+
         return False
 
     def consider(idx: int):
@@ -511,9 +533,9 @@ def parse_schedule_for_date(
         # Format 2: "Tue Dec 02 18:22:" (no emoji, from text extraction)
         # Pattern captures: (day string like "Tue Dec 02"), (content until next day or end)
         day_pattern = r"(?:📅\s*\n?\s*)?(\w{3}\s+\w{3}\s+\d{1,2})\s+[\d:]+\s*:(.*?)(?=(?:📅\s*\n?\s*)?\w{3}\s+\w{3}\s+\d{1,2}\s+[\d:]+\s*:|$)"
-        
+
         day_matches = re.findall(day_pattern, schedule_text, re.DOTALL | re.IGNORECASE)
-        
+
         logger.debug("Found %d day sections in schedule", len(day_matches))
         for date_str, _ in day_matches:
             logger.debug("  Day section: %s", date_str.strip())
@@ -521,7 +543,7 @@ def parse_schedule_for_date(
         if day_matches and target_patterns:
             for date_str, section in day_matches:
                 date_str_clean = ' '.join(date_str.split()).strip()  # Normalize whitespace
-                
+
                 # Check if any target pattern matches
                 for pattern in target_patterns:
                     if pattern.lower() in date_str_clean.lower():
@@ -529,10 +551,10 @@ def parse_schedule_for_date(
                         matched_day = date_str_clean
                         logger.debug("Matched schedule day: '%s' with pattern '%s'", date_str_clean, pattern)
                         break
-                
+
                 if section_to_parse:
                     break
-            
+
             if not section_to_parse:
                 logger.warning("No schedule day matched for run_date %s, patterns tried: %s", run_date, target_patterns)
 
@@ -556,20 +578,20 @@ def parse_schedule_for_date(
 
     for match in re.finditer(account_pattern, section_to_parse, re.IGNORECASE):
         username = match.group(1)
-        
+
         # Skip garbage
         if username.lower() in ["type", "method", "automation", "stats", "device", "notification"]:
             continue
-            
+
         status = match.group(2)
         follows = int(match.group(3)) if match.group(3) else 0
         accounts[username] = (status, follows)
-        
+
         if "method" in status.lower():
             method = status
 
     logger.debug("Parsed schedule: device=%s, matched_day=%s, accounts=%s", device_name, matched_day, list(accounts.keys()))
-    
+
     return device_name, method, accounts
 
 
@@ -578,7 +600,7 @@ def parse_final_update(
 ) -> Tuple[str, str, Dict[str, Tuple[int, int, bool, bool]], Optional[str]]:
     """
     Parse Task Final Update text - keeps LAST occurrence of each account.
-    
+
     Returns: (device_name, run_date, {username: (follows, requests, is_blocked)}, error_message)
     """
     device_name = "Unknown"
@@ -632,7 +654,7 @@ def parse_final_update(
             continue
 
         username = user_match.group(1)
-        
+
         # Skip garbage usernames
         if username.lower() in ["type", "method", "automation", "stats", "device", "name", "notification"]:
             logger.debug("Skipping garbage username '%s' from final update", username)
@@ -689,9 +711,9 @@ def parse_final_update(
             logger.info(
                 f"Overwriting account {username}: was {old_follows}+{old_requests}, now {follows}+{requests}"
             )
-        
+
         accounts[username] = (follows, requests, is_blocked, is_unfollow_run)
-        
+
         logger.info(
             f"Parsed account {username}: follows={follows}, requests={requests}, "
             f"blocked={is_blocked} (total={follows + requests})"
@@ -884,7 +906,7 @@ def format_channels_compact(channels: List[ChannelData]) -> str:
 def format_output_directly(channels: List[ChannelData]) -> str:
     """Format output - prioritize actual results over schedule."""
     lines: List[str] = []
-    
+
     for ch in channels:
         # Phone line
         if ch.error_message:
@@ -896,13 +918,13 @@ def format_output_directly(channels: List[ChannelData]) -> str:
                 lines.append(f"{ch.device_name} – no daily task made")
         else:
             lines.append(f"{ch.device_name} – completed daily task ({ch.method})")
-        
+
         # Account lines - filter out empty/invalid accounts and ensure consistent formatting
         for acc in ch.accounts:
             # Skip accounts with empty or invalid usernames
             if not acc.username or not acc.username.strip():
                 continue
-            
+
             # Method 9: never show follow stats; only show blocked or username
             if ch.method == "Method 9":
                 if acc.is_blocked:
@@ -910,14 +932,14 @@ def format_output_directly(channels: List[ChannelData]) -> str:
                 else:
                     lines.append(f"   * {acc.username}")
                 continue
-            
+
             if acc.is_unfollow:
                 total = acc.actual_follows  # unfollows count
                 action_word = "unfollows"
             else:
                 total = acc.actual_follows + acc.actual_requests
                 action_word = "follows"
-            
+
             # FIX: Check actual data FIRST, not schedule status
             # If account actually ran (has follows/requests), show results regardless of schedule
             if total > 0 or acc.is_blocked:
@@ -952,7 +974,7 @@ def format_output_directly(channels: List[ChannelData]) -> str:
                     )
                 else:
                     lines.append(f"   * {acc.username} - total # of follows made: 0")
-    
+
     # Filter out any empty lines and join
     filtered_lines = [line for line in lines if line.strip()]
     return "\n".join(filtered_lines)
@@ -1071,7 +1093,7 @@ async def run_daily_summary(
     output_text = format_output_directly(channel_structs)
     logger.info("Formatted output directly (no AI) - %d lines", len(output_text.split('\n')))
     logger.debug("First 500 chars of output:\n%s", output_text[:500])
-    
+
     # Alternative: Use Gemini (currently disabled - uncomment to enable)
     # compact_data = format_channels_compact(channel_structs)
     # logger.info("Compact data size: %d characters", len(compact_data))
@@ -1086,8 +1108,52 @@ async def run_daily_summary(
         today_str = dt.strftime("%B %d, %Y")
     else:
         today_str = datetime.datetime.now().strftime("%B %d, %Y")
+
+    # Build summary bot output
+    summary_bot_output = f"📊 **Daily Summary - {today_str}**\n\n{output_text.strip()}"
     
-    final_report = f"📊 **Daily Summary - {today_str}**\n\n{output_text.strip()}"
+    # Try to get analyzer report (only for !summary command, not auto daily)
+    analyzer_report = ""
+    if destination:  # Only when called from !summary command (has destination)
+        try:
+            from instagram_analyzer import analyze_from_file
+            import os
+            
+            # Write output_text to data.txt (overwrite previous)
+            data_file = os.path.join(os.path.dirname(__file__), "data.txt")
+            with open(data_file, 'w', encoding='utf-8') as f:
+                f.write(output_text.strip())
+            
+            logger.debug("Wrote summary bot output to %s (%d characters)", data_file, len(output_text.strip()))
+            
+            # Extract date for analyzer report
+            date_str = None
+            if target_date:
+                dt = datetime.datetime.strptime(target_date, "%Y-%m-%d")
+                date_str = dt.strftime("%B %d, %Y")
+            else:
+                date_str = today_str
+            
+            # Get analyzer report from data.txt file
+            analyzer_report = analyze_from_file(data_file, date_str=date_str)
+            
+            if analyzer_report:
+                logger.info("Successfully generated analyzer report (%d characters)", len(analyzer_report))
+            else:
+                logger.warning("Analyzer report is empty - continuing with summary bot output only")
+            
+            # Keep data.txt file for debugging (not deleting)
+            logger.debug("data.txt file saved at %s for debugging", data_file)
+                
+        except Exception as exc:
+            logger.exception("Failed to generate analyzer report: %s", exc)
+            # Continue without analyzer report - summary bot output will still be sent
+    
+    # Combine outputs with separator
+    if analyzer_report:
+        final_report = f"{summary_bot_output}\n\n{'═' * 50}\n\n{analyzer_report}"
+    else:
+        final_report = summary_bot_output
 
     chunks = [final_report[i:i + 1900] for i in range(0, len(final_report), 1900)]
 
@@ -1157,7 +1223,7 @@ def _is_owner(user_id: int) -> bool:
 async def summary_command(ctx: commands.Context, *, day_arg: str = None):
     """
     Get summary for a specific day.
-    
+
     Usage:
         !summary              - Most recent summary
         !summary today        - Today's summary
@@ -1175,7 +1241,7 @@ async def summary_command(ctx: commands.Context, *, day_arg: str = None):
         return
 
     target_date = None
-    
+
     if day_arg:
         target_date = parse_day_argument(day_arg, settings.timezone)
         if target_date is None:
@@ -1188,13 +1254,13 @@ async def summary_command(ctx: commands.Context, *, day_arg: str = None):
                 f"• `2025-12-02`, `12/02`"
             )
             return
-        
+
         dt = datetime.datetime.strptime(target_date, "%Y-%m-%d")
         readable = dt.strftime("%A, %B %d, %Y")
         await ctx.send(f"📅 Getting summary for **{readable}**...")
     else:
         await ctx.send("📊 Getting most recent summary...")
-    
+
     logger.info("!summary triggered by %s for date=%s", ctx.author, target_date)
     await run_daily_summary(target_date=target_date, destination=ctx.channel)
 
@@ -1207,5 +1273,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
